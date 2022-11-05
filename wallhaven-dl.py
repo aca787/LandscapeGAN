@@ -129,8 +129,8 @@ def downloadPage(pageId, totalImage, path="Wallhaven", small=False):
             filename = os.path.basename(url)
             osPath = os.path.join(path, filename)
             tags = getTags(pageData[i]["url"])
-            label_file.write(name + ' | '+ tags + '\n')
             if not os.path.exists(osPath):
+                label_file.write(name + ' | '+ tags + '\n')
                 imgreq = stuborn_request(url)
 
                 if imgreq.status_code == 200:

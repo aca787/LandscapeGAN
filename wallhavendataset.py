@@ -10,13 +10,14 @@ import glob
 def show_landmarks_batch(sample_batched):
     """Show image with landmarks for a batch of samples."""
     images_batch, label = \
-            sample_batched['right_images'], sample_batched['txt']
+            sample_batched['right_images'], sample_batched['class']
     batch_size = len(images_batch)
     im_size = images_batch.size(2)
     grid_border_size = 2
 
     grid = utils.make_grid(images_batch)
     plt.imshow(grid.numpy().transpose((1, 2, 0)))
+    print(label)
     plt.show()
 
 class Text2ImageDataset(Dataset):
@@ -63,8 +64,9 @@ class Text2ImageDataset(Dataset):
                 sample['class'] = os.path.basename(os.path.dirname(file_name))
                 sample['label_text'] = ' '.join(sentence)
                 
-                self.classes.add(sample['class']) #TODO
-                self.dataset.append(sample)        
+                self.classes.add(sample['class'])
+                self.dataset.append(sample)      
+        self.classes = list(self.classes)  
     def __len__(self):
         return len(self.dataset)
 
@@ -77,31 +79,31 @@ class Text2ImageDataset(Dataset):
         # pdb.set_trace()
         example = self.dataset[idx]
         right_image = io.imread(example['image_path'])
-        wrong_image =  io.imread(self.find_wrong_image(example['class']))
+        wrong_label =  np.array(self.find_wrong_label(example['label_text'])).astype(str)
         txt = np.array(example['label_text']).astype(str)
         class_ = np.array(example['class']).astype(str)
 
         sample = {
                 'right_images':right_image,
-                'wrong_images': wrong_image, #TODO torch.FloatTensor(wrong_image)
+                'wrong_label': str(wrong_label),
                 'txt': str(txt),
                 'class': str(class_),
-                'embedding':torch.zeros(self.embed_dim)
+                'embedding':torch.zeros(self.embed_dim),
+                'wrong_embedding': torch.zeros(self.embed_dim)
                  }
         if self.transform:
             sample = self.transform(sample)
 
         return sample
 
-    def find_wrong_image(self, category):
-        idx = np.random.randint(len(self.dataset))
-        example = self.dataset[idx]
-        _category = example['class']
+    def find_wrong_label(self, category):
+        idx = np.random.randint(len(self.classes))
+        _category = self.classes[idx]
 
         if _category != category:
-            return example['image_path']
+            return _category
 
-        return self.find_wrong_image(category)
+        return self.find_wrong_label(category)
 
 
     def validate_image(self, img):
@@ -143,9 +145,8 @@ class Rescale(object):
         return transform.resize(image,(new_h, new_w))
 
     def __call__(self, sample):
-        right_image, wrong_image = sample['right_images'],sample['wrong_images']
+        right_image = sample['right_images']
         sample['right_images']=self._resize(right_image)
-        sample['wrong_images']=self._resize(wrong_image)
         
         return sample
 
@@ -173,9 +174,8 @@ class CenterCrop(object):
                       0: new_w]
 
     def __call__(self, sample):
-        right_image, wrong_image = sample['right_images'],sample['wrong_images']
+        right_image = sample['right_images']
         sample['right_images']=self.crop(right_image)
-        sample['wrong_images']=self.crop(wrong_image)
 
         return sample
         
@@ -185,19 +185,20 @@ class EmbedLabel(object):
         self.embedder=embedder
     def __call__(self, sample):
         
-        sample['embedding'] = self.embedder.embed([sample['txt']])
+        sample['embedding'] = self.embedder.embed(sample['class'])
+        sample['wrong_embedding'] = self.embedder.embed(sample['wrong_label'])
         return sample
 
 
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
     def __call__(self, sample):
-        right_image, wrong_image = sample['right_images'],sample['wrong_images']
+        right_image = sample['right_images']
 
         # swap color axis because
         # numpy image: H x W x C
         # torch image: C x H x W
         sample['right_images'] = torch.FloatTensor(right_image.transpose((2, 0, 1)))
-        sample['wrong_images'] = torch.FloatTensor(wrong_image.transpose((2, 0, 1)))
-        sample['embedding'] = torch.FloatTensor(sample['embedding']).squeeze() #We don't need the '1' dimension
+        sample['embedding'] = torch.FloatTensor(sample['embedding']).squeeze()
+        sample['wrong_embedding'] = torch.FloatTensor(sample['wrong_embedding']).squeeze()
         return sample

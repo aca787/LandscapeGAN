@@ -25,7 +25,7 @@ BASEURL=""
 cookies=dict()
 
 global APIKEY
-APIKEY = "vXlfXq7m2cHpjNdY0PgP8DJ2Dj4WIhGm"
+APIKEY = ""
 
 def category():
     global BASEURL
@@ -81,9 +81,24 @@ def search():
         urllib.parse.quote_plus(query) + "&categories=" +\
         '100' + '&purity=' + '100' +'&page='
     return query
+def stuborn_request(url, sleep_time=0.5):
+    try: 
+        urlreq = requests.get(url, cookies=cookies)
+        while(urlreq.status_code==429):
+            #print(f"Too many requests... Pausing for {sleep_time} seconds.")
+            time.sleep(sleep_time)
+            urlreq = requests.get(url, cookies=cookies)
+    except Exception as e:
+        print(e)
+        time.sleep(5)
+        urlreq = stuborn_request(url, sleep_time*2)
+
+    time.sleep(0.1)
+    return urlreq
 
 def getTags(img_url, as_list=False):
-    urlreq = requests.get(img_url, cookies=cookies)
+    urlreq = stuborn_request(img_url+'?apikey=' + APIKEY)
+    
     soup = BeautifulSoup(urlreq.content, 'html.parser')
     title = soup.title.string
     tag_string = title.split("|")[0] 
@@ -95,26 +110,29 @@ def getTags(img_url, as_list=False):
 
 def downloadPage(pageId, totalImage, path="Wallhaven", small=False):
     url = BASEURL + str(pageId)
-    urlreq = requests.get(url, cookies=cookies)
+    urlreq = stuborn_request(url)
+    
     pagesImages = json.loads(urlreq.content);
     pageData = pagesImages["data"]
 
-    with open(os.path.join(path, "labels.txt"), 'w')as label_file:
+    with open(os.path.join(path, "labels.txt"), 'a')as label_file:
 
         for i in range(len(pageData)):
             currentImage = (((pageId - 1) * 24) + (i + 1))
-            tags = getTags(pageData[i]["url"])
             name = pageData[i]['id']
             if small is False:
                 url = pageData[i]["path"]
             else:
                 url = pageData[i]['thumbs']['small']
-            label_file.write(name + ' | '+ tags + '\n')
+            
 
             filename = os.path.basename(url)
             osPath = os.path.join(path, filename)
+            tags = getTags(pageData[i]["url"])
+            label_file.write(name + ' | '+ tags + '\n')
             if not os.path.exists(osPath):
-                imgreq = requests.get(url, cookies=cookies)
+                imgreq = stuborn_request(url)
+
                 if imgreq.status_code == 200:
                     print("Downloading : %s - %s / %s" % (filename, currentImage , totalImage))
                     with open(osPath, 'ab') as imageFile:
@@ -146,7 +164,7 @@ def main():
     elif Choice == 'search':
         searching = search()
 
-    pgid = 1#int(input('How Many pages you want to Download: '))
+    pgid = int(input('How Many pages you want to Download: '))
     totalImageToDownload = str(24 * pgid)
     new_path =  os.path.join("Wallhaven", searching)
     os.makedirs(new_path, exist_ok=True)
